@@ -1,0 +1,37 @@
+on:
+  workflow_call:
+    inputs:
+      role-for-oidc:
+        type: string
+        required: true
+      role-for-staging-s3:
+        type: string
+        required: true
+      artifact-name:
+        type: string
+        required: false
+        default: microfrontend
+      artifact-path:
+        type: string
+        required: false
+        default: service/microfrontend/build/
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: meisterplan/actions-aws-credentials@v1
+        with:
+          role-for-oidc: ${{ inputs.role-for-oidc }}
+          role-to-assume: ${{ inputs.role-for-staging-s3 }}
+          aws-region: eu-central-1
+      - run: make microfrontend-download
+        env:
+          ENVIRONMENT: staging
+          TAG: git-${{ github.sha }}
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
+          if-no-files-found: error

@@ -1,0 +1,68 @@
+name: CI Build
+on:
+  pull_request:
+    branches: [master]
+  workflow_call:
+    inputs:
+      build-microfrontend:
+        type: boolean
+        required: false
+        default: true
+      node-version:
+        type: string
+        required: true
+
+jobs:
+  validate-gql-schema:
+    runs-on: ubuntu-latest
+    container:
+      image: meisterplan/apollo-cli:v2.28.0
+    env:
+      APOLLO_KEY: ${{ secrets.APOLLO_ENGINE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v2
+      # Checks on master branch and pull-requests
+      - run: make graphql-validate-client-master
+        if: github.ref != 'refs/heads/release'
+      # Checks on release branch
+      - run: make graphql-validate-client-release
+        if: github.ref == 'refs/heads/release'
+
+  test-microfrontend:
+    runs-on: ubuntu-latest
+    if: inputs.build-microfrontend
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: "yarn"
+          cache-dependency-path: "**/yarn.lock"
+      - run: 'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc'
+      - run: make microfrontend-test
+      - uses: EnricoMi/publish-unit-test-result-action@dc4b2f22e07d0995dffe65daf902598f695e8827
+        if: always()
+        with:
+          files: "**/microfrontend/junit.xml"
+          check_name: "Unit Test Results (Frontend)"
+
+  build-microfrontend:
+    runs-on: ubuntu-latest
+    if: inputs.build-microfrontend
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: "yarn"
+          cache-dependency-path: "**/yarn.lock"
+      - run: 'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc'
+      - run: make microfrontend-build
+      - uses: actions/upload-artifact@v2
+        with:
+          name: microfrontend
+          path: service/microfrontend/build/

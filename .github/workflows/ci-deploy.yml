@@ -1,0 +1,155 @@
+name: CI Deploy
+on:
+  workflow_call:
+    service-name:
+      type: string
+      required: true
+    role-for-oidc:
+      type: string
+      required: true
+    role-for-staging-s3:
+      type: string
+      required: true
+    role-for-prod-eu-s3:
+      type: string
+      required: true
+    role-for-prod-us-s3:
+      type: string
+      required: true
+    staging-s3-bucket-name:
+      type: string
+      required: true
+    prod-eu-s3-bucket-name:
+      type: string
+      required: true
+    prod-us-s3-bucket-name:
+      type: string
+      required: true
+    node-version:
+      type: string
+      required: false
+      default: "14"
+    secrets:
+      APOLLO_ENGINE_API_KEY:
+        required: true
+      NPM_TOKEN:
+        required: true
+      JIRA_TRANSITIONS_BASE_URL:
+        required: true
+      MS_TEAMS_WEBHOOK_URL:
+        required: true
+
+jobs:
+  check-availability-on-s3:
+    name: prechecks
+    uses: meisterplan/workflows-microfrontends/.github/workflows/check-availability.yml@V1
+    with:
+      service-name: ${{ inputs.service-name }}
+      role-for-oidc: ${{ inputs.role-for-oidc }}
+      role-for-staging-s3: ${{ inputs.role-for-staging-s3 }}
+      role-for-prod-eu-s3: ${{ inputs.role-for-prod-eu-s3 }}
+      role-for-prod-us-s3: ${{ inputs.role-for-prod-us-s3 }}
+      staging-s3-bucket-name: ${{ inputs.staging-s3-bucket-name }}
+      prod-eu-s3-bucket-name: ${{ inputs.prod-eu-s3-bucket-name }}
+      prod-us-s3-bucket-name: ${{ inputs.prod-us-s3-bucket-name }}
+
+  # build or download artifact
+  build-or-download-artifact:
+    name: artifact
+    needs: check-availability-on-s3
+    uses: meisterplan/workflows-microfrontends/.github/workflows/ci-artifact.yml@V1
+    secrets: inherit
+    with:
+      role-for-oidc: ${{ inputs.role-for-oidc }}
+      role-for-staging-s3: ${{ inputs.role-for-staging-s3 }}
+      # use string comparison because GHA can't handle comparing strings to booleans
+      build-microfrontend: ${{ needs.check-availability-on-s3.outputs.exists-on-staging == 'false' }}
+
+  # deploy
+  deploy:
+    uses: meisterplan/workflows-microfrontends/.github/workflows/deploy.yml@V1
+    needs: build-or-download-artifact
+    with:
+      role-for-oidc: ${{ inputs.role-for-oidc }}
+      role-for-staging-s3: ${{ inputs.role-for-staging-s3 }}
+      role-for-prod-eu-s3: ${{ inputs.role-for-prod-eu-s3 }}
+      role-for-prod-us-s3: ${{ inputs.role-for-prod-us-s3 }}
+      exists-on-staging: ${{ needs.check-availability-on-s3.outputs.exists-on-staging == 'true' }}
+      exists-on-prod-eu: ${{ needs.check-availability-on-s3.outputs.exists-on-prod-eu == 'true' }}
+      exists-on-prod-us: ${{ needs.check-availability-on-s3.outputs.exists-on-prod-us == 'true' }}
+
+  publish-microfrontend-wrapper:
+    needs: deploy
+    if: github.ref == 'refs/heads/release'
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: "yarn"
+          cache-dependency-path: "**/yarn.lock"
+      - run: 'echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc'
+      - run: make microfrontend-wrapper-publish VERSION=1.1.${GITHUB_RUN_NUMBER}
+
+  # notification & jira transitions -----------------------
+  jira-transition-in-build:
+    if: github.ref == 'refs/heads/master'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 10
+      - uses: meisterplan/actions-jiratransition@v1
+        with:
+          transition_name: "In Build"
+          service_base_url: ${{ secrets.JIRA_TRANSITIONS_BASE_URL }}
+
+  jira-transition-in-deployment:
+    needs: build-or-download-artifact
+    if: github.ref == 'refs/heads/master'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 10
+      - uses: meisterplan/actions-jiratransition@v1
+        with:
+          transition_name: "In Deployment"
+          service_base_url: ${{ secrets.JIRA_TRANSITIONS_BASE_URL }}
+
+  jira-transition-closed:
+    needs: deploy
+    if: github.ref == 'refs/heads/master'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 10
+      - uses: meisterplan/actions-jiratransition@v1
+        with:
+          transition_name: "Closed"
+          service_base_url: ${{ secrets.JIRA_TRANSITIONS_BASE_URL }}
+
+  notify-on-failure:
+    needs:
+      - jira-transition-closed
+      - publish-microfrontend-wrapper
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: technote-space/workflow-conclusion-action@78dd560e96a5b79a07fbc6affc7d6c334ccccf69
+      - name: notify team on failure
+        uses: meisterplan/actions-msteams@v1
+        with:
+          color: "#9F3B3C"
+          body: |
+            **Failed** GitHub Actions workflow **${{ github.workflow }}** failed in **${{ github.repository }}**.
+            See [build logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+          webhook: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}
+        if: env.WORKFLOW_CONCLUSION == 'failure'

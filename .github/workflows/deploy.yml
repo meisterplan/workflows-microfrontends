@@ -1,0 +1,111 @@
+on:
+  workflow_call:
+    inputs:
+      role-for-oidc:
+        type: string
+        required: true
+      role-for-staging-s3:
+        type: string
+        required: true
+      role-for-prod-eu-s3:
+        type: string
+        required: true
+      role-for-prod-us-s3:
+        type: string
+        required: true
+      exists-on-staging:
+        type: string
+        required: true
+      exists-on-prod-eu:
+        type: boolean
+        required: true
+      exists-on-prod-us:
+        type: boolean
+        required: true
+      artifact-name:
+        type: string
+        required: false
+        default: microfrontend
+      artifact-path:
+        type: string
+        required: false
+        default: service/microfrontend/build/
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/download-artifact@v2
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
+      - name: wait for other deployments to complete first
+        uses: meisterplan/action-turnstyle@v2
+        with:
+          abort-after-seconds: 600
+          poll-interval-seconds: 10
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: meisterplan/actions-aws-credentials@v1
+        name: AWS Credentials Staging
+        if: github.ref == 'refs/heads/master'
+        with:
+          role-for-oidc: ${{ inputs.role-for-oidc }}
+          role-to-assume: ${{ inputs.role-for-staging-s3 }}
+          aws-region: eu-central-1
+      - run: echo "${{ inputs.exists-on-staging }}"
+      - run: make microfrontend-upload
+        name: Upload Microfrontend Staging
+        if: github.ref == 'refs/heads/master' && !inputs.exists-on-staging
+        shell: bash
+        env:
+          ENVIRONMENT: staging
+          TAG: git-${{ github.sha }}
+      - run: make microfrontend-deploy
+        name: Deploy Microfrontend Staging
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          ENVIRONMENT: staging
+          TAG: git-${{ github.sha }}
+      - uses: meisterplan/actions-aws-credentials@v1
+        name: AWS Credentials Prod-EU
+        if: github.ref == 'refs/heads/release'
+        with:
+          role-for-oidc: ${{ inputs.role-for-oidc }}
+          role-to-assume: ${{ inputs.role-for-prod-eu-s3 }}
+          aws-region: eu-central-1
+      - run: make microfrontend-upload
+        name: Upload Microfrontend Prod-EU
+        if: github.ref == 'refs/heads/release' && !inputs.exists-on-prod-eu
+        shell: bash
+        env:
+          ENVIRONMENT: prod-eu
+          TAG: git-${{ github.sha }}
+      - run: make microfrontend-deploy
+        name: Deploy Microfrontend Prod-EU
+        if: github.ref == 'refs/heads/release'
+        shell: bash
+        env:
+          ENVIRONMENT: prod-eu
+          TAG: git-${{ github.sha }}
+      - uses: meisterplan/actions-aws-credentials@v1
+        name: AWS Credentials Prod-US
+        if: github.ref == 'refs/heads/release'
+        with:
+          role-for-oidc: ${{ inputs.role-for-oidc }}
+          role-to-assume: ${{ inputs.role-for-prod-us-s3 }}
+          aws-region: eu-central-1
+      - run: make microfrontend-upload
+        name: Upload Microfrontend Prod-US
+        if: github.ref == 'refs/heads/release' && !inputs.exists-on-prod-us
+        shell: bash
+        env:
+          ENVIRONMENT: prod-us
+          TAG: git-${{ github.sha }}
+      - run: make microfrontend-deploy
+        name: Deploy Microfrontend Prod-US
+        if: github.ref == 'refs/heads/release'
+        shell: bash
+        env:
+          ENVIRONMENT: prod-us
+          TAG: git-${{ github.sha }}

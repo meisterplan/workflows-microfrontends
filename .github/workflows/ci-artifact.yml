@@ -1,0 +1,33 @@
+on:
+  workflow_call:
+    inputs:
+      role-for-oidc:
+        type: string
+        required: true
+      role-for-staging-s3:
+        type: string
+        required: true
+      build-microfrontend:
+        type: boolean
+        required: true
+      node-version:
+        type: string
+        required: true
+
+  # prepare artifact ------------------------------------
+jobs:
+  build-jobs:
+    name: build
+    uses: meisterplan/workflows-microfrontends/.github/workflows/ci-build.yml@V1
+    with:
+      build-microfrontend: ${{ inputs.build-microfrontend }}
+      node-version: ${{ inputs.node-version }}
+    secrets: inherit
+
+  download-microfrontend:
+    name: download
+    if: ${{ !inputs.build-microfrontend }}
+    uses: meisterplan/workflows-microfrontends/.github/workflows/download.yml@V1
+    with:
+      role-for-oidc: ${{ inputs.role-for-oidc }}
+      role-for-staging-s3: ${{ inputs.role-for-staging-s3 }}
