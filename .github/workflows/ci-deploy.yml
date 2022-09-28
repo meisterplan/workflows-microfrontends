@@ -47,11 +47,7 @@ jobs:
       service-name: ${{ inputs.service-name }}
       role-for-oidc: ${{ inputs.role-for-oidc }}
       role-for-staging-s3: ${{ inputs.role-for-staging-s3 }}
-      role-for-prod-eu-s3: ${{ inputs.role-for-prod-eu-s3 }}
-      role-for-prod-us-s3: ${{ inputs.role-for-prod-us-s3 }}
       staging-s3-bucket-name: ${{ inputs.staging-s3-bucket-name }}
-      prod-eu-s3-bucket-name: ${{ inputs.prod-eu-s3-bucket-name }}
-      prod-us-s3-bucket-name: ${{ inputs.prod-us-s3-bucket-name }}
 
   # build or download artifact
   build-or-download-artifact:
@@ -74,9 +70,6 @@ jobs:
       role-for-staging-s3: ${{ inputs.role-for-staging-s3 }}
       role-for-prod-eu-s3: ${{ inputs.role-for-prod-eu-s3 }}
       role-for-prod-us-s3: ${{ inputs.role-for-prod-us-s3 }}
-      exists-on-staging: ${{ needs.check-availability-on-s3.outputs.exists-on-staging == 'true' }}
-      exists-on-prod-eu: ${{ needs.check-availability-on-s3.outputs.exists-on-prod-eu == 'true' }}
-      exists-on-prod-us: ${{ needs.check-availability-on-s3.outputs.exists-on-prod-us == 'true' }}
 
   publish-microfrontend-wrapper:
     needs: deploy

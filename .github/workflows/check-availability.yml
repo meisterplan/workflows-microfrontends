@@ -10,35 +10,17 @@ on:
       role-for-staging-s3:
         type: string
         required: true
-      role-for-prod-eu-s3:
-        type: string
-        required: true
-      role-for-prod-us-s3:
-        type: string
-        required: true
       staging-s3-bucket-name:
-        type: string
-        required: true
-      prod-eu-s3-bucket-name:
-        type: string
-        required: true
-      prod-us-s3-bucket-name:
         type: string
         required: true
     outputs:
       exists-on-staging:
         value: ${{ jobs.check-availability.outputs.exists-on-staging }}
-      exists-on-prod-eu:
-        value: ${{ jobs.check-availability.outputs.exists-on-prod-eu }}
-      exists-on-prod-us:
-        value: ${{ jobs.check-availability.outputs.exists-on-prod-us }}
 jobs:
   check-availability:
     runs-on: ubuntu-latest
     outputs:
       exists-on-staging: ${{ steps.check-staging.outputs.exists == 'true' }}
-      exists-on-prod-eu: ${{ steps.check-prod-eu.outputs.exists == 'true' }}
-      exists-on-prod-us: ${{ steps.check-prod-us.outputs.exists == 'true' }}
     steps:
       - uses: meisterplan/actions-aws-credentials@v1
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/release'
@@ -49,34 +31,6 @@ jobs:
       - name: Check if microfrontend exists on staging
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/release'
         id: check-staging
-        shell: bash
-        run: >
-          aws s3 ls s3://${{ inputs.staging-s3-bucket-name }}/${{ inputs.service-name }}/git-${{ github.sha }}/
-          && echo "::set-output name=exists::true"
-          || echo "::set-output name=exists::false"
-      - uses: meisterplan/actions-aws-credentials@v1
-        if: github.ref == 'refs/heads/release'
-        with:
-          role-for-oidc: ${{ inputs.role-for-oidc }}
-          role-to-assume: ${{ inputs.role-for-prod-eu-s3 }}
-          aws-region: eu-central-1
-      - name: Check if microfrontend exists on prod-eu
-        if: github.ref == 'refs/heads/release'
-        id: check-prod-eu
-        shell: bash
-        run: >
-          aws s3 ls s3://${{ inputs.staging-s3-bucket-name }}/${{ inputs.service-name }}/git-${{ github.sha }}/
-          && echo "::set-output name=exists::true"
-          || echo "::set-output name=exists::false"
-      - uses: meisterplan/actions-aws-credentials@v1
-        if: github.ref == 'refs/heads/release'
-        with:
-          role-for-oidc: ${{ inputs.role-for-oidc }}
-          role-to-assume: ${{ inputs.role-for-prod-us-s3 }}
-          aws-region: us-west-2
-      - name: Check if microfrontend exists on prod-us
-        if: github.ref == 'refs/heads/release'
-        id: check-prod-us
         shell: bash
         run: >
           aws s3 ls s3://${{ inputs.staging-s3-bucket-name }}/${{ inputs.service-name }}/git-${{ github.sha }}/
